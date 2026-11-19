@@ -7,6 +7,8 @@ import ownerRoutes from "./routes/owner.js"
 import adminRoutes from "./routes/admin.js"
 import equipmentRoutes from "./routes/equipment.js"
 import reviewsRoutes from "./routes/reviews.js"
+import customerRoutes from "./routes/customer.js"
+import bookingsRoutes from "./routes/bookings.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -54,13 +56,27 @@ app.get("/", (req, res) => {
   })
 })
 
-// Health check endpoint
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-  })
+// Health check endpoint with database ping
+app.get("/api/health", async (req, res) => {
+  try {
+    const db = await connectDB()
+    await db.command({ ping: 1 })
+    res.json({
+      status: "healthy",
+      database: "connected",
+      dbName: process.env.DB_NAME || "gearnestdb",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    })
+  } catch (err) {
+    res.status(500).json({
+      status: "unhealthy",
+      database: "disconnected",
+      error: err.message,
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    })
+  }
 })
 
 // Modular feature routes
@@ -68,6 +84,8 @@ app.use("/api/owner", ownerRoutes)
 app.use("/api/admin", adminRoutes)
 app.use("/api/equipment", equipmentRoutes)
 app.use("/api/reviews", reviewsRoutes)
+app.use("/api/customer", customerRoutes)
+app.use("/api/bookings", bookingsRoutes)
 
 // Phase 1 Verification Endpoint (Verifies Better-Auth JWT via JWKS and loads DB user)
 app.get("/api/test/verify-jwt", verifyToken, (req, res) => {

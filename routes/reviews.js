@@ -16,7 +16,10 @@ router.get("/", async (req, res) => {
     res.json({ success: true, count: reviews.length, reviews })
   } catch (error) {
     console.error("Error fetching reviews:", error)
-    res.status(500).json({ message: "Failed to fetch reviews" })
+    res.status(500).json({
+      message: "Failed to fetch reviews",
+      error: error.message,
+    })
   }
 })
 

@@ -21,7 +21,10 @@ router.get("/featured", async (req, res) => {
     res.json({ success: true, count: featured.length, equipment: featured })
   } catch (error) {
     console.error("Error fetching featured equipment:", error)
-    res.status(500).json({ message: "Failed to fetch featured equipment" })
+    res.status(500).json({
+      message: "Failed to fetch featured equipment",
+      error: error.message,
+    })
   }
 })
 
