@@ -1,0 +1,29 @@
+{
+  "name": "gearnest-server",
+  "version": "1.0.0",
+  "description": "GearNest Equipment Rental Platform - Backend Server",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "gearnest",
+    "equipment-rental",
+    "express",
+    "mongodb",
+    "jwt",
+    "jwks"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.0.0",
+    "jose": "^5.9.6",
+    "mongodb": "^6.12.0",
+    "stripe": "^17.4.0"
+  }
+}
