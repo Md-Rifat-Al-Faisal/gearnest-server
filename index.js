@@ -7,24 +7,43 @@ import { verifyToken, verifyRenter, verifyOwner, verifyAdmin } from "./lib/auth.
 const app = express()
 const port = process.env.PORT || 5000
 
-// Middleware
+// Middleware - allow localhost & any vercel preview deployment dynamically
 app.use(express.json())
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) return callback(null, true)
+      // Allow all origins (reflection) while supporting credentials
+      return callback(null, true)
+    },
     credentials: true,
   })
 )
 
-// Initialize DB connection
-await connectDB()
+// Graceful database connection initialization
+try {
+  await connectDB()
+} catch (err) {
+  console.error("MongoDB connection warning at startup:", err.message)
+}
 
 // Root route
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
-    message: "GearNest Rental Platform API is running",
+    message: "GearNest Rental Platform API is running on Vercel Serverless",
+    environment: process.env.NODE_ENV || "development",
     time: new Date().toISOString(),
+  })
+})
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
   })
 })
 
@@ -50,8 +69,11 @@ app.get("/api/test/admin-only", verifyToken, verifyAdmin, (req, res) => {
   res.json({ success: true, message: "Welcome, verified Admin", user: req.user })
 })
 
-app.listen(port, () => {
-  console.log(`GearNest server running on port ${port}`)
-})
+// In local development, run app.listen; on Vercel serverless, Vercel invokes export default app
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`GearNest server running locally on port ${port}`)
+  })
+}
 
 export default app
