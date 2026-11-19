@@ -9,6 +9,7 @@ import equipmentRoutes from "./routes/equipment.js"
 import reviewsRoutes from "./routes/reviews.js"
 import customerRoutes from "./routes/customer.js"
 import bookingsRoutes from "./routes/bookings.js"
+import usersRoutes from "./routes/users.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -86,6 +87,7 @@ app.use("/api/equipment", equipmentRoutes)
 app.use("/api/reviews", reviewsRoutes)
 app.use("/api/customer", customerRoutes)
 app.use("/api/bookings", bookingsRoutes)
+app.use("/api/users", usersRoutes)
 
 // Phase 1 Verification Endpoint (Verifies Better-Auth JWT via JWKS and loads DB user)
 app.get("/api/test/verify-jwt", verifyToken, (req, res) => {

@@ -222,4 +222,118 @@ router.delete("/equipment/:id", async (req, res) => {
   }
 })
 
+/**
+ * GET /api/owner/rentals
+ * Return all bookings for equipment owned by the authenticated owner.
+ */
+router.get("/rentals", async (req, res) => {
+  try {
+    const ownerFilter = {
+      ownerId: {
+        $in: [req.user.id, ...(ObjectId.isValid(req.user.id) ? [new ObjectId(req.user.id)] : [])],
+      },
+    }
+
+    const rentals = await collections
+      .bookings()
+      .find(ownerFilter)
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    res.json({
+      success: true,
+      count: rentals.length,
+      rentals,
+    })
+  } catch (error) {
+    console.error("Error fetching owner rentals:", error)
+    res.status(500).json({
+      message: "Failed to fetch rental reservations",
+      error: error.message,
+    })
+  }
+})
+
+/**
+ * PATCH /api/owner/rentals/:id/status
+ * Transition rental booking status: active -> completed or cancelled.
+ * Atomically guards stock restoration: only restores availableQuantity when
+ * the booking atomically transitions from "active".
+ */
+router.patch("/rentals/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params
+    const { status } = req.body
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid rental booking ID format" })
+    }
+
+    const allowedTransitions = ["completed", "cancelled"]
+    if (!status || !allowedTransitions.includes(status)) {
+      return res.status(400).json({
+        message: `Invalid status. Permitted status transitions are: ${allowedTransitions.join(", ")}`,
+      })
+    }
+
+    const ownerFilter = {
+      $in: [req.user.id, ...(ObjectId.isValid(req.user.id) ? [new ObjectId(req.user.id)] : [])],
+    }
+
+    // Atomically transition ONLY if current status is "active"
+    const updatedBooking = await collections.bookings().findOneAndUpdate(
+      {
+        _id: new ObjectId(id),
+        ownerId: ownerFilter,
+        bookingStatus: "active",
+      },
+      {
+        $set: {
+          bookingStatus: status,
+          updatedAt: new Date(),
+        },
+      },
+      { returnDocument: "after" }
+    )
+
+    if (!updatedBooking) {
+      // Check if booking exists under this owner
+      const existing = await collections.bookings().findOne({
+        _id: new ObjectId(id),
+        ownerId: ownerFilter,
+      })
+
+      if (!existing) {
+        return res.status(404).json({ message: "Rental booking not found or unauthorized" })
+      }
+
+      return res.status(400).json({
+        message: `Cannot update rental booking. It is currently "${existing.bookingStatus}". Stock restoration only triggers from active rentals.`,
+      })
+    }
+
+    // Atomically restore available inventory stock on the equipment
+    const eqId = ObjectId.isValid(updatedBooking.equipmentId)
+      ? new ObjectId(updatedBooking.equipmentId)
+      : updatedBooking.equipmentId
+
+    await collections.equipment().updateOne(
+      { _id: eqId },
+      { $inc: { availableQuantity: updatedBooking.quantity } }
+    )
+
+    res.json({
+      success: true,
+      message: `Rental booking successfully marked as ${status}. ${updatedBooking.quantity} unit(s) restored to available fleet inventory.`,
+      booking: updatedBooking,
+    })
+  } catch (error) {
+    console.error("Error updating rental booking status:", error)
+    res.status(500).json({
+      message: "Failed to update rental status",
+      error: error.message,
+    })
+  }
+})
+
 export default router
