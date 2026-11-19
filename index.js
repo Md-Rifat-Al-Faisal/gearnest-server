@@ -3,18 +3,34 @@ import cors from "cors"
 import "dotenv/config"
 import { connectDB } from "./lib/db.js"
 import { verifyToken, verifyRenter, verifyOwner, verifyAdmin } from "./lib/auth.js"
+import ownerRoutes from "./routes/owner.js"
+import adminRoutes from "./routes/admin.js"
+import equipmentRoutes from "./routes/equipment.js"
+import reviewsRoutes from "./routes/reviews.js"
 
 const app = express()
 const port = process.env.PORT || 5000
 
-// Middleware - allow localhost & any vercel preview deployment dynamically
+// Middleware - CORS allowing CLIENT_URL, http://localhost:3000, and credentials
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+].filter(Boolean)
+
 app.use(express.json())
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      // Allow requests with no origin (curl, server-to-server, postman)
       if (!origin) return callback(null, true)
-      // Allow all origins (reflection) while supporting credentials
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app") ||
+        process.env.NODE_ENV !== "production"
+      ) {
+        return callback(null, true)
+      }
       return callback(null, true)
     },
     credentials: true,
@@ -46,6 +62,12 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
   })
 })
+
+// Modular feature routes
+app.use("/api/owner", ownerRoutes)
+app.use("/api/admin", adminRoutes)
+app.use("/api/equipment", equipmentRoutes)
+app.use("/api/reviews", reviewsRoutes)
 
 // Phase 1 Verification Endpoint (Verifies Better-Auth JWT via JWKS and loads DB user)
 app.get("/api/test/verify-jwt", verifyToken, (req, res) => {
