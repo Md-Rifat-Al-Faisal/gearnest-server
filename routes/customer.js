@@ -2,6 +2,7 @@ import express from "express"
 import { ObjectId } from "mongodb"
 import { collections } from "../lib/db.js"
 import { verifyToken, verifyRenter } from "../lib/auth.js"
+import { lazyAuditExpiredRentals } from "../lib/cron.js"
 
 const router = express.Router()
 
@@ -128,6 +129,9 @@ router.get("/favorites", async (req, res) => {
  */
 router.get("/rentals", async (req, res) => {
   try {
+    // Lazily trigger automated expiration check if needed
+    lazyAuditExpiredRentals()
+
     const rentals = await collections
       .bookings()
       .find({ customerId: req.user.id })

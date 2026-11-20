@@ -11,7 +11,7 @@ import customerRoutes from "./routes/customer.js"
 import bookingsRoutes from "./routes/bookings.js"
 import usersRoutes from "./routes/users.js"
 import analyticsRoutes from "./routes/analytics.js"
-import { initCronJobs } from "./lib/cron.js"
+import { initCronJobs, autoCompleteExpiredRentals } from "./lib/cron.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -79,6 +79,21 @@ app.get("/api/health", async (req, res) => {
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     })
+  }
+})
+
+// Automated cron execution endpoint (for Vercel native cron, monitoring, or manual audit)
+app.get("/api/cron/expire-rentals", async (req, res) => {
+  try {
+    const result = await autoCompleteExpiredRentals()
+    res.json({
+      success: true,
+      message: "Automated rental expiration and stock restoration check completed",
+      ...result,
+      timestamp: new Date().toISOString(),
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
   }
 })
 

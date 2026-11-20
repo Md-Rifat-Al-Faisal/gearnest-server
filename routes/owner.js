@@ -2,6 +2,7 @@ import express from "express"
 import { ObjectId } from "mongodb"
 import { collections } from "../lib/db.js"
 import { verifyToken, verifyOwner } from "../lib/auth.js"
+import { lazyAuditExpiredRentals } from "../lib/cron.js"
 
 const router = express.Router()
 
@@ -228,6 +229,9 @@ router.delete("/equipment/:id", async (req, res) => {
  */
 router.get("/rentals", async (req, res) => {
   try {
+    // Lazily trigger automated expiration check if needed
+    lazyAuditExpiredRentals()
+
     const ownerFilter = {
       ownerId: {
         $in: [req.user.id, ...(ObjectId.isValid(req.user.id) ? [new ObjectId(req.user.id)] : [])],
