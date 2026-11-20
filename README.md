@@ -55,6 +55,11 @@ The **GearNest Server** is a robust RESTful API backend engineered with Express 
 - `GET /api/users/profile` (`verifyToken`): Returns authenticated user information.
 - `PATCH /api/users/profile` (`verifyToken`): Updates phone, address, name, or profile image.
 
+### 7. Automated Booking Status Expiration (Cron Job)
+- Powered by `node-cron` running on an hourly schedule.
+- Scans for all active bookings where `endDate < new Date()`.
+- Atomically transitions status to `"completed"` and restores equipment inventory (`availableQuantity += quantity`).
+
 ---
 
 ## Authentication & Security
@@ -85,6 +90,7 @@ The **GearNest Server** is a robust RESTful API backend engineered with Express 
     "express": "^5.0.0",
     "jose": "^5.9.6",
     "mongodb": "^6.12.0",
+    "node-cron": "^3.0.3",
     "stripe": "^17.4.0"
   }
 }

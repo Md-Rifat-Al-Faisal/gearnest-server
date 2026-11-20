@@ -11,6 +11,7 @@ import customerRoutes from "./routes/customer.js"
 import bookingsRoutes from "./routes/bookings.js"
 import usersRoutes from "./routes/users.js"
 import analyticsRoutes from "./routes/analytics.js"
+import { initCronJobs } from "./lib/cron.js"
 
 const app = express()
 const port = process.env.PORT || 5000
@@ -113,10 +114,11 @@ app.get("/api/test/admin-only", verifyToken, verifyAdmin, (req, res) => {
   res.json({ success: true, message: "Welcome, verified Admin", user: req.user })
 })
 
-// In local development, run app.listen; on Vercel serverless, Vercel invokes export default app
+// In local development, run app.listen and start background cron jobs; on Vercel serverless, Vercel invokes export default app
 if (!process.env.VERCEL) {
   app.listen(port, () => {
     console.log(`GearNest server running locally on port ${port}`)
+    initCronJobs()
   })
 }
 
