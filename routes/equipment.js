@@ -29,7 +29,32 @@ router.get("/featured", async (req, res) => {
 })
 
 /**
- * 2. GET /api/equipment
+ * 2. GET /api/equipment/categories
+ * Returns distinct category counts of approved equipment.
+ */
+router.get("/categories", async (req, res) => {
+  try {
+    const categories = await collections
+      .equipment()
+      .aggregate([
+        { $match: { status: "Approved" } },
+        { $group: { _id: "$category", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ])
+      .toArray()
+
+    res.json({
+      success: true,
+      categories: categories.map((c) => ({ name: c._id, count: c.count })),
+    })
+  } catch (error) {
+    console.error("Error fetching categories:", error)
+    res.status(500).json({ message: "Failed to fetch equipment categories" })
+  }
+})
+
+/**
+ * 3. GET /api/equipment
  * Public search, multi-facet filtering, sorting, and pagination.
  */
 router.get("/", async (req, res) => {
