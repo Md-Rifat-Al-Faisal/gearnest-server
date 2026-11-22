@@ -125,9 +125,36 @@ router.patch("/equipment/:id", async (req, res) => {
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
         if (field === "rentalPrice") {
-          updates[field] = parseFloat(req.body[field])
+          const p = parseFloat(req.body[field])
+          if (isNaN(p) || p < 0.5) {
+            return res.status(400).json({ message: "Rental price must be at least $0.50" })
+          }
+          updates[field] = p
         } else if (field === "availableQuantity") {
-          updates[field] = parseInt(req.body[field], 10)
+          const q = parseInt(req.body[field], 10)
+          if (isNaN(q) || q < 0) {
+            return res.status(400).json({ message: "Available quantity cannot be negative" })
+          }
+          updates[field] = q
+        } else if (field === "rentalType") {
+          const rt = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
+          if (!["Daily", "Weekly", "Monthly"].includes(rt)) {
+            return res.status(400).json({ message: "Rental type must be Daily, Weekly, or Monthly" })
+          }
+          updates[field] = rt
+        } else if (field === "status") {
+          const st = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
+          if (!["Approved", "Rejected", "Pending"].includes(st)) {
+            return res.status(400).json({ message: "Status must be Approved, Rejected, or Pending" })
+          }
+          updates[field] = st
+        } else if (field === "condition") {
+          const c = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
+          const validConditions = ["New", "Excellent", "Good", "Fair"]
+          if (!validConditions.includes(c)) {
+            return res.status(400).json({ message: `Condition must be one of: ${validConditions.join(", ")}` })
+          }
+          updates[field] = c
         } else {
           updates[field] = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
         }

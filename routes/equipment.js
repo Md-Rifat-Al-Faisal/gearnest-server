@@ -1,8 +1,18 @@
 import express from "express"
 import { ObjectId } from "mongodb"
+import { jwtVerify, createRemoteJWKSet } from "jose"
 import { collections } from "../lib/db.js"
 
 const router = express.Router()
+
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000"
+let jwksCache = null
+function getJWKS() {
+  if (!jwksCache) {
+    jwksCache = createRemoteJWKSet(new URL(`${CLIENT_URL}/api/auth/jwks`))
+  }
+  return jwksCache
+}
 
 /**
  * 1. GET /api/equipment/featured
@@ -84,9 +94,24 @@ router.get("/", async (req, res) => {
       ]
     }
 
-    // Category filter
+    // Category filter (supports both rubric standardized full names and legacy short names)
     if (category && category !== "all" && typeof category === "string") {
-      query.category = category
+      const catTrim = category.trim()
+      const catMap = {
+        "Construction Equipment": ["Construction Equipment", "Construction"],
+        "Construction": ["Construction Equipment", "Construction"],
+        "Photography Equipment": ["Photography Equipment", "Photography"],
+        "Photography": ["Photography Equipment", "Photography"],
+        "Vehicles & Transportation": ["Vehicles & Transportation", "Vehicles"],
+        "Vehicles": ["Vehicles & Transportation", "Vehicles"],
+        "Agriculture Equipment": ["Agriculture Equipment", "Agriculture"],
+        "Agriculture": ["Agriculture Equipment", "Agriculture"],
+        "Electronics": ["Electronics"],
+        "Event Equipment": ["Event Equipment", "Events"],
+        "Events": ["Event Equipment", "Events"],
+      }
+      const matched = catMap[catTrim] || [catTrim]
+      query.category = { $in: matched }
     }
 
     // Rental type filter (Daily, Weekly, Monthly)
@@ -165,6 +190,37 @@ router.get("/:id", async (req, res) => {
 
     if (!item) {
       return res.status(404).json({ message: "Equipment not found" })
+    }
+
+    // Protect non-approved equipment: allow only equipment owner or admin
+    if (item.status !== "Approved") {
+      let authorized = false
+      const authHeader = req.headers.authorization
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        try {
+          const token = authHeader.split(" ")[1]
+          const { payload } = await jwtVerify(token, getJWKS())
+          const user = await collections.users().findOne({
+            $or: [
+              ...(ObjectId.isValid(payload.sub) ? [{ _id: new ObjectId(payload.sub) }] : []),
+              { email: payload.email },
+            ],
+          })
+          if (
+            user &&
+            (user.role === "admin" ||
+              (item.ownerId && item.ownerId.toString() === user._id.toString()))
+          ) {
+            authorized = true
+          }
+        } catch {
+          authorized = false
+        }
+      }
+
+      if (!authorized) {
+        return res.status(404).json({ message: "Equipment listing is not approved or publicly available" })
+      }
     }
 
     res.json({ success: true, equipment: item })

@@ -38,7 +38,7 @@ const SEED_EQUIPMENT = [
     brand: "Bobcat",
     model: "S650",
     image: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1000&q=80",
-    rentalTerms: "Full fuel tank on delivery; return full or fuel surcharge applies. Security deposit required.",
+    rentalTerms: "Full fuel tank on delivery; return full or fuel surcharge applies. Valid government ID required.",
     status: "Approved",
   },
 
@@ -55,7 +55,7 @@ const SEED_EQUIPMENT = [
     brand: "Sony",
     model: "ILME-FX6V",
     image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=1000&q=80",
-    rentalTerms: "Certificate of Insurance (COI) or credit hold required prior to handover.",
+    rentalTerms: "Standard checkout verification required prior to handover.",
     status: "Approved",
   },
   {
@@ -87,7 +87,7 @@ const SEED_EQUIPMENT = [
     brand: "Ford",
     model: "F-350 Lariat",
     image: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&w=1000&q=80",
-    rentalTerms: "Valid commercial or standard driver's license + proof of comprehensive auto insurance required.",
+    rentalTerms: "Valid commercial or standard driver's license required.",
     status: "Approved",
   },
   {
@@ -151,7 +151,7 @@ const SEED_EQUIPMENT = [
     brand: "DJI",
     model: "Matrice 300 RTK",
     image: "https://images.unsplash.com/photo-1508614589041-895b88991e3e?auto=format&fit=crop&w=1000&q=80",
-    rentalTerms: "FAA Part 107 certified pilot license required for verification before dispatch.",
+    rentalTerms: "FAA Part 107 drone pilot credential required for verification before dispatch.",
     status: "Approved",
   },
   {
@@ -226,7 +226,7 @@ const SEED_REVIEWS = [
     reviewerName: "David Thornton",
     reviewerRole: "Live Productions Director",
     avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80",
-    rating: 5,
+    rating: 4,
     comment:
       "The JBL VTX A8 rig delivered pristine acoustic coverage for our 3-day outdoor music festival in Atlanta. Transparent rental pricing, clear terms, and instant Stripe confirmation gave our clients total peace of mind.",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10), // 10 days ago
@@ -244,7 +244,7 @@ const SEED_REVIEWS = [
     reviewerName: "Keith Gallagher",
     reviewerRole: "Industrial Survey Specialist",
     avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80",
-    rating: 5,
+    rating: 4,
     comment:
       "The Matrice 300 RTK drone survey kit with thermal imaging allowed our infrastructure team to audit 40 acres of utility corridors without any hiccups. GearNest is now our go-to equipment depot.",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 20), // 20 days ago
@@ -256,7 +256,7 @@ async function seed() {
     await client.connect()
     console.log("Connected to MongoDB Atlas...")
 
-    const db = client.db("gearnestdb")
+    const db = client.db(process.env.DB_NAME || "gearnestdb")
     const usersCol = db.collection("user")
     const equipmentCol = db.collection("equipment")
     const reviewsCol = db.collection("reviews")
@@ -295,7 +295,7 @@ async function seed() {
 
     // If no user exists at all in the database yet, construct a placeholder owner ID
     const ownerId = owner ? (owner._id ? owner._id.toString() : owner.id) : new ObjectId().toString()
-    const ownerName = owner?.name || "GearNest Certified Equipment Fleet"
+    const ownerName = owner?.name || "GearNest Equipment Fleet"
     const ownerEmail = owner?.email || "owner@gearnest.com"
 
     console.log(`Associating equipment with owner: [${ownerName}] (${ownerEmail}, id: ${ownerId})`)

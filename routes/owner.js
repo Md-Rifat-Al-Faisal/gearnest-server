@@ -1,10 +1,15 @@
 import express from "express"
 import { ObjectId } from "mongodb"
+import Stripe from "stripe"
 import { collections } from "../lib/db.js"
 import { verifyToken, verifyOwner } from "../lib/auth.js"
 import { lazyAuditExpiredRentals } from "../lib/cron.js"
 
 const router = express.Router()
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+  apiVersion: "2024-12-18.acacia",
+})
 
 // All routes require token and owner role
 router.use(verifyToken, verifyOwner)
@@ -34,8 +39,22 @@ router.post("/equipment", async (req, res) => {
     const price = parseFloat(rentalPrice)
     const quantity = parseInt(availableQuantity, 10)
 
-    if (isNaN(price) || price < 0 || isNaN(quantity) || quantity < 0) {
-      return res.status(400).json({ message: "Invalid price or quantity values" })
+    if (isNaN(price) || price < 0.5) {
+      return res.status(400).json({ message: "Rental price must be at least $0.50" })
+    }
+
+    if (isNaN(quantity) || quantity < 1) {
+      return res.status(400).json({ message: "Available quantity must be at least 1 unit" })
+    }
+
+    const validRentalTypes = ["Daily", "Weekly", "Monthly"]
+    if (!validRentalTypes.includes(rentalType.trim())) {
+      return res.status(400).json({ message: "Rental type must be Daily, Weekly, or Monthly" })
+    }
+
+    const validConditions = ["New", "Excellent", "Good", "Fair"]
+    if (condition && !validConditions.includes(condition.trim())) {
+      return res.status(400).json({ message: "Condition must be New, Excellent, Good, or Fair" })
     }
 
     const newEquipment = {
@@ -147,16 +166,49 @@ router.patch("/equipment/:id", async (req, res) => {
     ]
 
     const updates = {}
+    let coreFieldsModified = false
+
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
         if (field === "rentalPrice") {
-          updates[field] = parseFloat(req.body[field])
+          const p = parseFloat(req.body[field])
+          if (isNaN(p) || p < 0.5) {
+            return res.status(400).json({ message: "Rental price must be at least $0.50" })
+          }
+          updates[field] = p
+          if (existing.rentalPrice !== p) coreFieldsModified = true
         } else if (field === "availableQuantity") {
-          updates[field] = parseInt(req.body[field], 10)
+          const q = parseInt(req.body[field], 10)
+          if (isNaN(q) || q < 0) {
+            return res.status(400).json({ message: "Available quantity cannot be negative" })
+          }
+          updates[field] = q
+        } else if (field === "rentalType") {
+          const rt = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
+          if (!["Daily", "Weekly", "Monthly"].includes(rt)) {
+            return res.status(400).json({ message: "Rental type must be Daily, Weekly, or Monthly" })
+          }
+          updates[field] = rt
+        } else if (field === "condition") {
+          const c = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
+          const validConditions = ["New", "Excellent", "Good", "Fair"]
+          if (!validConditions.includes(c)) {
+            return res.status(400).json({ message: "Condition must be New, Excellent, Good, or Fair" })
+          }
+          updates[field] = c
         } else {
-          updates[field] = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
+          const val = typeof req.body[field] === "string" ? req.body[field].trim() : req.body[field]
+          updates[field] = val
+          if (["name", "category", "image"].includes(field) && existing[field] !== val) {
+            coreFieldsModified = true
+          }
         }
       }
+    }
+
+    // If an approved listing's core details are modified by the owner, reset to Pending for admin re-moderation
+    if (existing.status === "Approved" && coreFieldsModified) {
+      updates.status = "Pending"
     }
 
     updates.updatedAt = new Date()
@@ -326,10 +378,53 @@ router.patch("/rentals/:id/status", async (req, res) => {
       { $inc: { availableQuantity: updatedBooking.quantity } }
     )
 
+    // Automated 100% Stripe refund if an active, paid rental is cancelled by the owner
+    let refundIssued = false
+    let refundId = null
+
+    if (status === "cancelled" && updatedBooking.paymentStatus === "paid" && stripe) {
+      try {
+        let paymentIntentId = null
+        if (updatedBooking.transactionId && updatedBooking.transactionId.startsWith("pi_")) {
+          paymentIntentId = updatedBooking.transactionId
+        } else if (updatedBooking.stripeSessionId) {
+          const sess = await stripe.checkout.sessions.retrieve(updatedBooking.stripeSessionId)
+          paymentIntentId =
+            typeof sess.payment_intent === "object" ? sess.payment_intent?.id : sess.payment_intent
+        }
+
+        if (paymentIntentId) {
+          const refund = await stripe.refunds.create({
+            payment_intent: paymentIntentId,
+            reason: "requested_by_customer",
+          })
+          refundIssued = true
+          refundId = refund.id
+        }
+      } catch (refundErr) {
+        console.warn("Notice: automated Stripe refund note on owner cancel:", refundErr.message)
+      }
+
+      await collections.bookings().updateOne(
+        { _id: updatedBooking._id },
+        {
+          $set: {
+            paymentStatus: refundIssued ? "refunded" : "refund-pending",
+            refundId,
+            refundedAt: refundIssued ? new Date() : null,
+            updatedAt: new Date(),
+          },
+        }
+      )
+    }
+
     res.json({
       success: true,
-      message: `Rental booking successfully marked as ${status}. ${updatedBooking.quantity} unit(s) restored to available fleet inventory.`,
-      booking: updatedBooking,
+      message: `Rental booking successfully marked as ${status}.${refundIssued ? " Automated 100% Stripe refund issued." : ""} ${updatedBooking.quantity} unit(s) restored to available fleet inventory.`,
+      booking: {
+        ...updatedBooking,
+        paymentStatus: refundIssued ? "refunded" : updatedBooking.paymentStatus,
+      },
     })
   } catch (error) {
     console.error("Error updating rental booking status:", error)

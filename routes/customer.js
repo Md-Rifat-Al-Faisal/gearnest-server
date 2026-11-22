@@ -12,6 +12,7 @@ router.use(verifyToken, verifyRenter)
 /**
  * 1. POST /api/customer/favorites
  * Upserts a favorite equipment bookmark for the logged-in renter.
+ * Rejects non-Approved equipment listings.
  */
 router.post("/favorites", async (req, res) => {
   try {
@@ -24,6 +25,10 @@ router.post("/favorites", async (req, res) => {
     const item = await collections.equipment().findOne({ _id: new ObjectId(equipmentId) })
     if (!item) {
       return res.status(404).json({ message: "Equipment not found" })
+    }
+
+    if (item.status !== "Approved") {
+      return res.status(400).json({ message: "Only approved equipment listings can be favorited" })
     }
 
     await collections.favorites().updateOne(
@@ -83,7 +88,7 @@ router.delete("/favorites/:equipmentId", async (req, res) => {
 /**
  * 3. GET /api/customer/favorites
  * Returns user's saved equipment using $lookup against equipment collection
- * so prices, specifications, and available quantities are always 100% live.
+ * so prices, specifications, and available quantities are always live.
  */
 router.get("/favorites", async (req, res) => {
   try {
@@ -129,7 +134,6 @@ router.get("/favorites", async (req, res) => {
  */
 router.get("/rentals", async (req, res) => {
   try {
-    // Lazily trigger automated expiration check if needed
     lazyAuditExpiredRentals()
 
     const rentals = await collections
@@ -146,6 +150,53 @@ router.get("/rentals", async (req, res) => {
   } catch (error) {
     console.error("Error fetching customer rentals:", error)
     res.status(500).json({ message: "Failed to fetch rental history" })
+  }
+})
+
+/**
+ * 5. PATCH /api/customer/rentals/:id/cancel
+ * Allows a customer to cancel their pending (unpaid) reservation.
+ */
+router.patch("/rentals/:id/cancel", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!id || !ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid booking ID" })
+    }
+
+    const booking = await collections.bookings().findOne({
+      _id: new ObjectId(id),
+      customerId: req.user.id,
+    })
+
+    if (!booking) {
+      return res.status(404).json({ message: "Rental booking not found" })
+    }
+
+    if (booking.paymentStatus === "paid") {
+      return res.status(400).json({
+        message: "Active or paid rentals cannot be directly cancelled. Please contact support dispatch.",
+      })
+    }
+
+    await collections.bookings().updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          bookingStatus: "cancelled",
+          cancelledAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    )
+
+    res.json({
+      success: true,
+      message: "Pending reservation cancelled successfully",
+    })
+  } catch (error) {
+    console.error("Error cancelling reservation:", error)
+    res.status(500).json({ message: "Failed to cancel reservation" })
   }
 })
 

@@ -1,100 +1,116 @@
-# GearNest — Industrial Equipment Rental Platform (Backend Server)
+# GearNest API — High-Performance Industrial Rental Engine & Dispatch Backend
 
-The **GearNest Server** is a robust RESTful API backend engineered with Express 5, MongoDB Native Driver, Stripe Checkout, and Better-Auth JWT verification. It powers equipment catalog discovery, fleet lifecycle management, atomic inventory control, rental contract progression, and platform-wide analytics aggregations.
+[![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Express 5](https://img.shields.io/badge/Express-5.0-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
+[![MongoDB Atlas](https://img.shields.io/badge/MongoDB_Atlas-6.x_Native-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![Stripe API](https://img.shields.io/badge/Stripe_API-17.4-626CD9?style=for-the-badge&logo=stripe&logoColor=white)](https://stripe.com/)
+[![Jose JWKS](https://img.shields.io/badge/Jose_JWKS-5.9-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white)](https://github.com/panva/jose)
+[![Node-Cron](https://img.shields.io/badge/Node--Cron-4.6-FF6C37?style=for-the-badge&logo=postman&logoColor=white)](https://github.com/node-cron/node-cron)
+[![Vercel Serverless](https://img.shields.io/badge/Vercel_Serverless-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com/)
 
-- **Live API Base URL**: [https://gearnest-server.vercel.app](https://gearnest-server.vercel.app)
-- **Frontend Client Application**: [https://gearnest-client.vercel.app](https://gearnest-client.vercel.app)
+The **GearNest Server** is a RESTful API backend engineered with Express 5, MongoDB Native Driver, Stripe Checkout, and Better-Auth JWT verification. It provides atomic inventory locking, equipment catalog discovery, fleet lifecycle tracking, role-based access control (RBAC), and platform analytics aggregations.
+
+- **Production API URL**: [https://gearnest-server.vercel.app](https://gearnest-server.vercel.app)
+- **Production Client URL**: [https://gearnest-client.vercel.app](https://gearnest-client.vercel.app)
 
 ---
 
-## Architecture & API Overview
+## Architectural Highlights
 
-### 1. Public Catalog & Testimonials
-- `GET /api/equipment/featured`: Returns the 6 highest-rated approved equipment listings for landing page showcases.
-- `GET /api/equipment`: Escaped regex query search (name, model, brand, location), category filter, rental type filter, price range limits, availability filter, and server-side pagination.
-- `GET /api/equipment/:id`: Retrieves individual machinery specs and validated owner contact metadata. Validates ObjectIds (returns HTTP 400 on malformed IDs, never 500).
-- `GET /api/reviews`: Returns platform customer testimonials and rating metrics.
+- **Database-Backed JWKS Resolution**: Tokens signed by Better-Auth are verified using public keys retrieved directly from MongoDB's `jwks` collection using `jose` (`importJWK` and `jwtVerify`) with in-memory caching. This eliminates external HTTP latency on every protected request.
+- **Atomic Stock Progression**: Booking reservations and return transitions utilize atomic MongoDB operations (`findOneAndUpdate` with `$inc` and conditional filters) to guarantee zero double-bookings or lost fleet counts.
+- **Idempotent Payment Verification**: Stripe checkout sessions are verified with strict amount checks, status assertions (`payment_status === "paid"`), and one-time atomic claims.
+- **Automated Rental Expiration**: Dual-mode engine supporting background `node-cron` in local environments and lazy on-demand audits + Vercel Cron (`/api/cron/expire-rentals`) in serverless deployments.
+
+---
+
+## Demo Accounts & Role-Based Access
+
+The platform features pre-configured accounts across all access tiers:
+
+| Role | Demo Email | Access Scope |
+| :--- | :--- | :--- |
+| **Customer** | `customer@gearnest.com` | Public catalog discovery, wishlist, dynamic Stripe checkout, active rental tracking |
+| **Fleet Owner** | `owner@gearnest.com` | Equipment listing wizard, fleet orders, return dispatch, atomic stock restoration, partner analytics |
+| **Platform Administrator** | `admin@gearnest.com` | Fleet moderation queue, platform user RBAC, platform-wide rentals audit, master analytics |
+
+> [!NOTE]
+> Demo passwords are protected against unauthorized modification on shared environments. Evaluators can log in using the pre-configured credentials provided above or in the evaluation submission form.
+
+---
+
+## API Endpoints Reference
+
+### 1. Public Catalog & Contact
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/equipment/featured` | Returns newest approved listings for landing page showcases. |
+| `GET` | `/api/equipment` | Search (name, brand, location), category filter, rate limits, stock availability, and pagination. |
+| `GET` | `/api/equipment/:id` | Detailed machinery specifications, condition, and owner contact card. |
+| `POST` | `/api/contact` | Submits jobsite inquiry form into MongoDB `contacts` collection. |
+| `GET` | `/api/reviews` | Retrieves operator testimonials and verified ratings. |
 
 ### 2. Customer Routes (`verifyToken`, `verifyRenter`)
-- `POST /api/customer/favorites`: Upserts a favorite equipment reference using a unique compound index `{ customerId: 1, equipmentId: 1 }`.
-- `GET /api/customer/favorites`: Returns user's saved machinery populated via MongoDB `$lookup` so prices and availability stay real-time.
-- `DELETE /api/customer/favorites/:equipmentId`: Removes equipment from the renter's favorites.
-- `POST /api/bookings/initiate`: Server-side duration computation (`Math.max(1, Math.ceil((end - start) / 86400000))`), unit rate calculation (`Daily`, `Weekly`, `Monthly`), inventory check (`availableQuantity >= quantity`), and pending reservation creation.
-- `POST /api/bookings/verify`: Validates Stripe `checkout.session.completed` webhook or client verification, updates payment to `paid`, marks booking `active`, and atomically decrements equipment stock via `$inc: { availableQuantity: -quantity }`. Idempotent against repeat triggers.
-- `GET /api/customer/rentals`: Returns personal rental contracts and payment status.
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/customer/favorites` | Upserts saved equipment using compound index `{ customerId: 1, equipmentId: 1 }`. |
+| `GET` | `/api/customer/favorites` | Returns user favorites populated via MongoDB `$lookup` for live pricing and stock. |
+| `DELETE` | `/api/customer/favorites/:equipmentId` | Removes equipment from user favorites. |
+| `POST` | `/api/bookings/initiate` | Computes rental duration, unit pricing, validates stock, and creates pending booking. |
+| `POST` | `/api/bookings/verify` | Idempotently verifies paid Stripe session, claims booking, and decrements stock. |
+| `GET` | `/api/customer/rentals` | Returns personal rental bookings and payment receipts. |
+| `PATCH` | `/api/customer/rentals/:id/cancel` | Allows customers to cancel pending, unpaid reservations. |
 
-### 3. Equipment Owner Routes (`verifyToken`, `verifyOwner`)
-- `POST /api/owner/equipment`: Creates a new equipment listing with default status `"Pending"` awaiting administrative moderation.
-- `GET /api/owner/equipment`: Lists all machinery owned by the authenticated user (`req.user.id`).
-- `PATCH /api/owner/equipment/:id`: Updates equipment parameters, rental price, term, or condition.
-- `DELETE /api/owner/equipment/:id`: Deletes machinery listing (strictly blocked if active bookings exist).
-- `GET /api/owner/rentals`: Returns all reservations placed on equipment owned by `req.user.id`.
-- `PATCH /api/owner/rentals/:id/status`: Transitions rental status (`active` $\rightarrow$ `completed` or `cancelled`). **Guards atomic stock restoration**: only increments `availableQuantity` when transitioning out of `"active"` status to prevent double-restores.
+### 3. Stripe Webhook & Fulfillment
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/webhooks/stripe` | Processes raw Stripe `checkout.session.completed` events with signature verification. |
 
-### 4. Administrative Routes (`verifyToken`, `verifyAdmin`)
-- `GET /api/admin/equipment`: Returns all platform equipment across all statuses.
-- `PATCH /api/admin/equipment/:id/status`: Approves or Rejects submitted equipment listings.
-- `PATCH /api/admin/equipment/:id`: Administrative overrides on any listing.
-- `DELETE /api/admin/equipment/:id`: Removes platform listing (blocked if active bookings exist).
-- `GET /api/admin/rentals`: Full audit log of all bookings across the platform.
-- `GET /api/admin/users`: Lists registered accounts with optional role filtering.
-- `PATCH /api/admin/users/:id/role`: Promotes or demotes user role (`customer`, `owner`, `admin`). Blocks admins from demoting themselves (`id === req.user.id`).
-- `DELETE /api/admin/users/:id`: Removes platform user (blocked from deleting own admin account).
+### 4. Equipment Owner Routes (`verifyToken`, `verifyOwner`)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/owner/equipment` | Creates a new machinery listing with default `"Pending"` moderation status. |
+| `GET` | `/api/owner/equipment` | Lists all machinery owned by authenticated partner. |
+| `PATCH` | `/api/owner/equipment/:id` | Updates machinery parameters, rental rates, or specifications. |
+| `DELETE` | `/api/owner/equipment/:id` | Deletes machinery listing (blocked if active bookings exist). |
+| `GET` | `/api/owner/rentals` | Returns all reservations placed on owner's fleet. |
+| `PATCH` | `/api/owner/rentals/:id/status` | Transitions booking status (`active` $\rightarrow$ `completed` or `cancelled`) with atomic stock restoration. |
 
-### 5. Analytics Aggregations (`/api/analytics`)
-- `GET /api/analytics/admin` (`verifyToken`, `verifyAdmin`):
-  - Parallel MongoDB aggregations for `totalUsers`, `totalEquipment`, `totalBookings`, `pendingApprovals`, `activeRentals`, `completedRentals`, and `totalRevenue`.
-  - Zero-filled past 6-month monthly trends (`monthlyStats`: `month`, `bookings`, `revenue`).
-  - Equipment category breakdown and status distribution.
-- `GET /api/analytics/owner` (`verifyToken`, `verifyOwner`):
-  - Owner-scoped counts: `totalListedEquipment`, `approvedEquipment`, `pendingEquipment`, `rejectedEquipment`, `activeRentals`, `completedRentals`, `totalEarnings`.
-  - Zero-filled past 6-month earnings velocity (`monthlyEarnings`: `month`, `bookings`, `earnings`).
-  - Fleet moderation status breakdown.
+### 5. Administrator Routes (`verifyToken`, `verifyAdmin`)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/admin/equipment` | Returns all platform machinery across all moderation statuses. |
+| `PATCH` | `/api/admin/equipment/:id/status` | Approves or rejects submitted equipment listings. |
+| `PATCH` | `/api/admin/equipment/:id` | Administrative edits on any listing. |
+| `DELETE` | `/api/admin/equipment/:id` | Removes listing from platform (blocked if active bookings exist). |
+| `GET` | `/api/admin/rentals` | Complete audit log of all bookings across the platform. |
+| `GET` | `/api/admin/users` | Lists registered platform accounts with optional role filtering. |
+| `PATCH` | `/api/admin/users/:id/role` | Updates user role (`customer`, `owner`, `admin`) with self-demotion guardrail. |
+| `DELETE` | `/api/admin/users/:id` | Removes platform user (blocked from deleting own admin account). |
 
-### 6. User Profile Routes (`/api/users`)
-- `GET /api/users/profile` (`verifyToken`): Returns authenticated user information.
-- `PATCH /api/users/profile` (`verifyToken`): Updates phone, address, name, or profile image.
+### 6. Analytics Aggregations (`/api/analytics`)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/analytics/admin` | Parallel MongoDB aggregations: revenue, users, equipment, 6-month trajectory, category split. |
+| `GET` | `/api/analytics/owner` | Owner-scoped aggregations: earnings velocity, fleet inventory, order distribution. |
 
-### 7. Automated Booking Status Expiration (Cron Job)
-- Powered by `node-cron` running on an hourly schedule.
-- Scans for all active bookings where `endDate < new Date()`.
-- Atomically transitions status to `"completed"` and restores equipment inventory (`availableQuantity += quantity`).
-
----
-
-## Authentication & Security
-
-- **Database-Backed JWKS Resolution**: Tokens signed by Better-Auth are verified using public keys retrieved directly from MongoDB's `jwks` collection via `jose` (`importJWK` and `jwtVerify`) with in-memory caching. This guarantees immediate zero-latency verification without external HTTP roundtrips.
-- **Remote JWKS Fallback**: If key is not in MongoDB, falls back to `createRemoteJWKSet`.
-- **RBAC Enforcement**: Middleware guards (`verifyToken`, `verifyRenter`, `verifyOwner`, `verifyAdmin`) enforce strict role hierarchy.
+### 7. Automated Rental Expiration
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/cron/expire-rentals` | Evaluates past-due active bookings (`endDate` < current time), transitions to `"completed"`, and restores inventory. Protected by optional cron secret. |
 
 ---
 
-## Demo Credentials
+## Tech Stack & Core Technologies
 
-| Role | Email | Password | Access Level |
-| :--- | :--- | :--- | :--- |
-| **Customer** | `customer@gearnest.com` | `Password123!` | Public Catalog, Wishlist, Checkout, Customer Dashboard |
-| **Fleet Owner** | `owner@gearnest.com` | `Password123!` | Add/Edit Equipment, Fleet Orders, Stock Restore, Owner Analytics |
-| **Admin** | `admin@gearnest.com` | `Password123!` | Moderate Equipment, Manage Users, Platform Analytics, All Rentals |
-
----
-
-## Tech Stack & Dependencies
-
-```json
-{
-  "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^5.0.0",
-    "jose": "^5.9.6",
-    "mongodb": "^6.12.0",
-    "node-cron": "^3.0.3",
-    "stripe": "^17.4.0"
-  }
-}
-```
+| Technology | Badge | Purpose |
+| :--- | :--- | :--- |
+| **Node.js** | ![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?logo=nodedotjs) | Server runtime |
+| **Express 5** | ![Express](https://img.shields.io/badge/Express-5.0-000000?logo=express) | REST API framework & routing |
+| **MongoDB Native** | ![MongoDB](https://img.shields.io/badge/MongoDB-6.x-47A248?logo=mongodb) | High-performance document database driver |
+| **Stripe** | ![Stripe](https://img.shields.io/badge/Stripe-17.4-626CD9?logo=stripe) | Server SDK for checkout sessions & webhooks |
+| **Jose** | ![Jose](https://img.shields.io/badge/Jose-5.9-000000?logo=jsonwebtokens) | Cryptographic JWKS resolution & JWT verification |
+| **Node-Cron** | ![Cron](https://img.shields.io/badge/Node--Cron-4.6-FF6C37?logo=postman) | Scheduled rental lifecycle audits |
 
 ---
 
@@ -107,20 +123,26 @@ Create a `.env` file in the `gearnest-server` root directory:
 PORT=5000
 NODE_ENV=development
 
-# MongoDB Atlas Connection
+# MongoDB Atlas Database URI
 MONGODB_URI="mongodb+srv://<user>:<password>@cluster.mongodb.net/gearnestdb"
 DB_NAME="gearnestdb"
 
-# Client Application URL (for CORS and JWKS fallback)
+# Client Web Application URL (CORS & Remote JWKS fallback)
 CLIENT_URL="http://localhost:3000"
 
 # Stripe Secret Key (Test Mode)
 STRIPE_SECRET_KEY="sk_test_..."
+
+# Optional Stripe Webhook Signing Secret
+STRIPE_WEBHOOK_SECRET="whsec_..."
+
+# Optional Vercel Cron Secret (for protected cron triggers)
+CRON_SECRET="your_secure_cron_secret"
 ```
 
 ---
 
-## Local Setup & Seeding
+## Local Setup & Database Seeding
 
 1. **Clone the repository**:
    ```bash
@@ -136,16 +158,16 @@ STRIPE_SECRET_KEY="sk_test_..."
 3. **Configure environment variables**:
    ```bash
    cp .env.example .env
-   # Add your MongoDB connection string and Stripe secret key
+   # Update MongoDB URI and Stripe Secret Key
    ```
 
-4. **Seed database with sample machinery and customer reviews**:
+4. **Seed database with equipment listings & testimonials**:
    ```bash
    node seed.js owner@gearnest.com
    ```
 
-5. **Start the server with hot-reloading**:
+5. **Start server**:
    ```bash
-   npm run dev
-   # Server runs at http://localhost:5000
+   # Development mode
+   node index.js
    ```
